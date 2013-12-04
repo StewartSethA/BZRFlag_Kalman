@@ -52,7 +52,7 @@ class Agent(object):
         self.observation_matrix = numpy.zeros((2, 6), float)
         self.observation_matrix[0][0] = 1
         self.observation_matrix[1][3] = 1
-        self.observation_noise = 25 * numpy.identity(2, float)
+        self.observation_noise = 5 * numpy.identity(2, float)
         self.sigma_x = 70
         self.sigma_y = 100
         self.rho = 0.3
@@ -80,8 +80,9 @@ class Agent(object):
 
     	second_term_inverse = numpy.linalg.inv(H.dot(F.dot(Et.dot(FT)) + Ex).dot(HT) + Ez)
     	kalman_gain = (F.dot(Et).dot(FT) + Ex).dot(HT).dot(second_term_inverse)
-        zt = (self.enemies[0].x, self.enemies[0].y)
-    	self.mu_t = F.dot(ut) + kalman_gain.dot(zt -H.dot(F.dot(ut)))
+        self.zt = (self.enemies[0].x, self.enemies[0].y)
+        #zt = (50, 50)
+    	self.mu_t = F.dot(ut) + kalman_gain.dot(self.zt -H.dot(F.dot(ut)))
     	self.sigma_t = (numpy.identity(6, float) - kalman_gain.dot(H)).dot(F.dot(Et.dot(FT)) + Ex)
 
     	for item in self.mu_t:
@@ -91,23 +92,38 @@ class Agent(object):
 
     def update_estimate_plot(self):
     	maxvalue = 0
-    	self.sigma_x = math.sqrt(self.sigma_t[0][0])**2
-    	self.sigma_y = math.sqrt(self.sigma_t[1][1])**2
+    	self.sigma_x = math.sqrt(self.sigma_t[0][0])
+    	self.sigma_y = math.sqrt(self.sigma_t[3][3])
     	self.rho = self.sigma_t[0][1] / (self.sigma_x * self.sigma_y)
-
-    	for x in range(0, self.worldsize - 1):
-    		for y in range(0, self.worldsize - 1):
-    			grid[y][x] = 1.0/(2.0 * math.pi * self.sigma_x * self.sigma_y * math.sqrt(1 - self.rho **2)) \
-    				* math.exp(-1.0/2.0 * ((x-self.worldsize/2)**2 / self.sigma_x**2 + (y-self.worldsize/2)**2 / self.sigma_y**2 \
-    				-2.0*self.rho*(x-self.worldsize/2)*(y-self.worldsize/2)/(self.sigma_x*self.sigma_y)))
-    			if grid[y][x] > 1:
-    				print grid[y][x]
-    			if grid[y][x] > maxvalue:
-    				maxvalue = grid[y][x]
+        for x in range(0, self.worldsize - 1):
+            for y in range(0, self.worldsize - 1):
+                grid[x][y] = 0
+        print self.sigma_x, self.sigma_y, self.rho
+        step = 1
+        extent = 20
+        #for x in range(0, self.worldsize - 1, step):
+    	#for y in range(0, self.worldsize - 1, step):
+        for x in range(int(self.mu_t[0] - extent * self.sigma_t[0][0] + self.worldsize/2), int(self.mu_t[0] + extent * self.sigma_t[0][0] + self.worldsize/2), step):
+            for y in range(int(self.mu_t[3] - extent * self.sigma_t[3][3] + self.worldsize/2), int(self.mu_t[3] + extent * self.sigma_t[3][3] + self.worldsize/2), step):
+                x_center = x - self.mu_t[0] - self.worldsize/2
+                y_center = y - self.mu_t[3] - self.worldsize/2
+                gx = x #/ step
+                gy = y #/ step
+                grid[gy][gx] = 1.0/(2.0 * math.pi * self.sigma_x * self.sigma_y * math.sqrt(1 - self.rho **2)) \
+    				* math.exp(-1.0/2.0 * (x_center**2 / self.sigma_x**2 + y_center**2 / self.sigma_y**2 \
+    				-2.0*self.rho*x_center*y_center/(self.sigma_x*self.sigma_y)))
+                if grid[gy][gx] > 1:
+                    print grid[gy][gx]
+                if grid[gy][gx] > maxvalue:
+    				maxvalue = grid[gy][gx]
     	self.grid_color_normalizer = maxvalue
-    	for x in range(0, self.worldsize - 1):
-    		for y in range(0, self.worldsize - 1):
-    			grid[x][y] = grid[x][y] / self.grid_color_normalizer
+        grid[int(self.zt[1]) - self.worldsize/2][int(self.zt[0]) - self.worldsize/2] = 1
+        for x in range(int(self.mu_t[0] - extent * self.sigma_t[0][0] + self.worldsize/2), int(self.mu_t[0] + extent * self.sigma_t[0][0] + self.worldsize/2), step):
+            for y in range(int(self.mu_t[3] - extent * self.sigma_t[3][3] + self.worldsize/2), int(self.mu_t[3] + extent * self.sigma_t[3][3] + self.worldsize/2), step):
+                gx = x #/ step
+                gy = y #/ step
+                grid[gx][gy] = grid[gx][gy] / self.grid_color_normalizer
+                '''
     			if x % 100 == 0:
     				grid[x][y] = (1 - float (abs((x - self.worldsize / 2))) / float(self.worldsize / 2))**2
     			if y % 100 == 0:
@@ -116,7 +132,9 @@ class Agent(object):
     				grid[x][y] = 1
     			if x == self.worldsize / 2 and y == self.worldsize / 2:
     				grid[x][y] = 0
-    	grid[int(self.mu_t[1]) + self.worldsize / 2][int(self.mu_t[0]) + self.worldsize / 2] = 0
+                '''
+    	#grid[int(self.mu_t[1]) + self.worldsize / 2][int(self.mu_t[0]) + self.worldsize / 2] = 0
+        
 
     def do_move(self, tank):
         """Compute and follow the potential field vector"""
