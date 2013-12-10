@@ -89,6 +89,9 @@ class Agent(object):
     	FT = F.transpose()
     	HT = H.transpose()
 
+        #Prediction
+        self.ut_pred = F.dot(ut)
+
         # Kalman update equations
     	second_term_inverse = numpy.linalg.inv(H.dot(F.dot(Et.dot(FT)) + Ex).dot(HT) + Ez)
     	kalman_gain = (F.dot(Et).dot(FT) + Ex).dot(HT).dot(second_term_inverse)
@@ -114,7 +117,7 @@ class Agent(object):
         print self.sigma_x, self.sigma_y, self.rho
 
         # Create a mini 2D sigma matrix and a 1D mu vector for plotting the distribution
-        pos_mu = (self.mu_t[0] + self.worldsize/2, self.mu_t[3] + self.worldsize/2)
+        pos_mu = (self.ut_pred[0] + self.worldsize/2, self.ut_pred[3] + self.worldsize/2)
         pos_sigma = ((self.sigma_t[0][0], self.sigma_t[0][3]),(self.sigma_t[3][0], self.sigma_t[3][3]))
         E_inv = numpy.linalg.inv(pos_sigma)
         rank = 2
@@ -128,10 +131,10 @@ class Agent(object):
         step = 1
         extent = 2
         maxvalue = 0
-        for x in range(int(self.mu_t[0] - extent * self.sigma_t[0][0] + self.worldsize/2), int(self.mu_t[0] + extent * self.sigma_t[0][0] + self.worldsize/2), step):
+        for x in range(int(self.ut_pred[0] - extent * self.sigma_t[0][0] + self.worldsize/2), int(self.ut_pred[0] + extent * self.sigma_t[0][0] + self.worldsize/2), step):
             if x < 0 or x >= self.worldsize:
                 continue
-            for y in range(int(self.mu_t[3] - extent * self.sigma_t[3][3] + self.worldsize/2), int(self.mu_t[3] + extent * self.sigma_t[3][3] + self.worldsize/2), step):
+            for y in range(int(self.ut_pred[3] - extent * self.sigma_t[3][3] + self.worldsize/2), int(self.ut_pred[3] + extent * self.sigma_t[3][3] + self.worldsize/2), step):
                 if y < 0 or y >= self.worldsize:
                     continue
 
@@ -170,10 +173,10 @@ class Agent(object):
                     print grid[gy][gx]
 
         # Apply normalizing constant
-        for x in range(int(self.mu_t[0] - extent * self.sigma_t[0][0] + self.worldsize/2), int(self.mu_t[0] + extent * self.sigma_t[0][0] + self.worldsize/2), step):
+        for x in range(int(self.ut_pred[0] - extent * self.sigma_t[0][0] + self.worldsize/2), int(self.ut_pred[0] + extent * self.sigma_t[0][0] + self.worldsize/2), step):
             if x < 0 or x >= self.worldsize:
                 continue
-            for y in range(int(self.mu_t[3] - extent * self.sigma_t[3][3] + self.worldsize/2), int(self.mu_t[3] + extent * self.sigma_t[3][3] + self.worldsize/2), step):
+            for y in range(int(self.ut_pred[3] - extent * self.sigma_t[3][3] + self.worldsize/2), int(self.ut_pred[3] + extent * self.sigma_t[3][3] + self.worldsize/2), step):
                 if y < 0 or y >= self.worldsize:
                     continue
                 gx = x #/ step
