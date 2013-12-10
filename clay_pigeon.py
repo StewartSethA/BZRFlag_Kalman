@@ -36,6 +36,7 @@ class Agent(object):
         self.bzrc = bzrc
         self.constants = self.bzrc.get_constants()
         self.commands = []
+        self.movedir = 1
 
     def tick(self, time_diff):
         """Some time has passed; decide what to do next."""
@@ -50,13 +51,15 @@ class Agent(object):
         tank = self.mytanks[0]
         self.originX = tank.x
         self.originY = tank.y
-        if time_diff <= 3.0:
-        	self.move_to_position(tank, 0, 0)
-        elif time_diff > 3.0 and time_diff <= 6.0:
-        	self.move_to_position(tank, 100, 100)
-        else:
-        	self.move_to_position(tank, -100, -100)
-        	
+
+        close = 35
+
+        if abs(tank.x -350) < close and abs(tank.y + 350) < close:
+        	self.movedir = -1
+        elif abs(tank.x + 350) < close and abs(tank.y - 350) < close:
+        	self.movedir = 1
+
+        self.move_to_position(tank, self.movedir * 350, -1 * self.movedir * 350)
         results = self.bzrc.do_commands(self.commands)
 
     def move_to_position(self, tank, target_x, target_y):

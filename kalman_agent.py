@@ -45,7 +45,8 @@ class Agent(object):
         self.observation_noise = 25 * numpy.identity(2, float)
         self.worldsize = int(self.constants['worldsize'])
         self.grid_color_normalizer = 1
-        
+        self.last_time_diff = 0
+
     def tick(self, time_diff):
         """Some time has passed; decide what to do next."""
         mytanks, othertanks, flags, shots = self.bzrc.get_lots_o_stuff()
@@ -57,12 +58,15 @@ class Agent(object):
                         self.constants['team']]
         self.commands = []
         
-        self.physics[0][1] = time_diff
-        self.physics[0][2] = time_diff**2 / 2
-        self.physics[1][2] = time_diff
-        self.physics[3][4] = time_diff
-        self.physics[3][5] = time_diff**2 / 2
-        self.physics[4][5] = time_diff
+        dt = time_diff - self.last_time_diff
+        self.last_time_diff = time_diff
+
+        self.physics[0][1] = dt
+        self.physics[0][2] = dt**2 / 2
+        self.physics[1][2] = dt
+        self.physics[3][4] = dt
+        self.physics[3][5] = dt**2 / 2
+        self.physics[4][5] = dt
 
         self.update_estimates()
         self.update_estimate_plot()
@@ -75,6 +79,7 @@ class Agent(object):
         	results = self.bzrc.do_commands(self.commands)
 
     def update_estimates(self):
+        # Initialize equation variables
     	F = self.physics
     	Et = self.sigma_t
     	Ex = self.state_noise
@@ -84,56 +89,87 @@ class Agent(object):
     	FT = F.transpose()
     	HT = H.transpose()
 
+        # Kalman update equations
     	second_term_inverse = numpy.linalg.inv(H.dot(F.dot(Et.dot(FT)) + Ex).dot(HT) + Ez)
     	kalman_gain = (F.dot(Et).dot(FT) + Ex).dot(HT).dot(second_term_inverse)
         self.zt = (self.enemies[0].x, self.enemies[0].y)
-        #zt = (50, 50)
     	self.mu_t = F.dot(ut) + kalman_gain.dot(self.zt -H.dot(F.dot(ut)))
     	self.sigma_t = (numpy.identity(6, float) - kalman_gain.dot(H)).dot(F.dot(Et.dot(FT)) + Ex)
 
+        # Debug statements
         print "mu_t:\n"
     	for item in self.mu_t:
     		print item
         print "observation:\n"
         print self.zt[0], self.zt[1]
-    	#for item in self.sigma_t:
-    		#print item
+        print "sigma:\n"
+    	for item in self.sigma_t:
+    		print item
 
     def update_estimate_plot(self):
-    	maxvalue = 0
+        # sigma x, y, and rho are used to plot the PDF
     	self.sigma_x = self.sigma_t[0][0]
     	self.sigma_y = self.sigma_t[3][3]
-    	self.rho = self.sigma_t[0][1] / (math.sqrt(self.sigma_x) * math.sqrt(self.sigma_y))
+    	self.rho = self.sigma_t[0][3] / (math.sqrt(self.sigma_x) * math.sqrt(self.sigma_y))
+        print self.sigma_x, self.sigma_y, self.rho
+
+        # Create a mini 2D sigma matrix and a 1D mu vector for plotting the distribution
+        pos_mu = (self.mu_t[0] + self.worldsize/2, self.mu_t[3] + self.worldsize/2)
+        pos_sigma = ((self.sigma_t[0][0], self.sigma_t[0][3]),(self.sigma_t[3][0], self.sigma_t[3][3]))
+        E_inv = numpy.linalg.inv(pos_sigma)
+        rank = 2
+        coefficient = (1.0 / math.sqrt(numpy.linalg.det(pos_sigma) * (2.0 * math.pi)**rank))
+
+        # Clear display grid
         for x in range(0, self.worldsize - 1):
             for y in range(0, self.worldsize - 1):
                 grid[x][y] = 0
-        print self.sigma_x, self.sigma_y, self.rho
+
         step = 1
-        extent = 5
-        #for x in range(0, self.worldsize - 1, step):
-    	#for y in range(0, self.worldsize - 1, step):
+        extent = 2
+        maxvalue = 0
         for x in range(int(self.mu_t[0] - extent * self.sigma_t[0][0] + self.worldsize/2), int(self.mu_t[0] + extent * self.sigma_t[0][0] + self.worldsize/2), step):
             if x < 0 or x >= self.worldsize:
                 continue
             for y in range(int(self.mu_t[3] - extent * self.sigma_t[3][3] + self.worldsize/2), int(self.mu_t[3] + extent * self.sigma_t[3][3] + self.worldsize/2), step):
                 if y < 0 or y >= self.worldsize:
                     continue
-                x_center = x - self.mu_t[0] - self.worldsize/2
-                y_center = y - self.mu_t[3] - self.worldsize/2
+
                 gx = x #/ step
                 gy = y #/ step
-                #print "SIGMA_X: ", self.sigma_x, " SIGMA_Y: ", self.sigma_y
+                '''
+                x_center = x - self.mu_t[0] - self.worldsize/2
+                y_center = y - self.mu_t[3] - self.worldsize/2
                 small1 = 1.0/(2.0 * math.pi * self.sigma_x * self.sigma_y * math.sqrt(1 - self.rho **2))
                 small2 = math.exp(-1.0/2.0 * (x_center**2 / self.sigma_x**2 + y_center**2 / self.sigma_y**2 \
                     -2.0*self.rho*x_center*y_center/(self.sigma_x*self.sigma_y)))
+
+
+                # Plot the Gaussian distribution
                 grid[gy][gx] = 1.0/(2.0 * math.pi * self.sigma_x * self.sigma_y * math.sqrt(1 - self.rho **2)) \
     				* math.exp(-1.0/2.0 * (x_center**2 / self.sigma_x**2 + y_center**2 / self.sigma_y**2 \
     				-2.0*self.rho*x_center*y_center/(self.sigma_x*self.sigma_y)))
+                '''
+
+                # Plotting Try 2: See if we can dispense with the Rho
+                plot_x = (gx, gy)
+                plot_vector = numpy.subtract(plot_x, pos_mu)
+                #print "plot vector ", plot_vector, "\n"
+                exponent = (-1.0/2.0) * (plot_vector.transpose().dot(E_inv.dot(plot_vector)))
+                #print coefficient, " c\n"
+                #print exponent, " e\n"
+                grid[gy][gx] = coefficient * math.exp(exponent)
+                #print grid[gy][gx], " g\n"
+
+                # Set the normalizing constant
+                if grid[gy][gx] > maxvalue:
+                    maxvalue = grid[gy][gx]
+
+                # DEBUG
                 if grid[gy][gx] > 1:
                     print grid[gy][gx]
-                if grid[gy][gx] > maxvalue:
-    				maxvalue = grid[gy][gx]
-    	self.grid_color_normalizer = maxvalue
+
+        # Apply normalizing constant
         for x in range(int(self.mu_t[0] - extent * self.sigma_t[0][0] + self.worldsize/2), int(self.mu_t[0] + extent * self.sigma_t[0][0] + self.worldsize/2), step):
             if x < 0 or x >= self.worldsize:
                 continue
@@ -142,7 +178,9 @@ class Agent(object):
                     continue
                 gx = x #/ step
                 gy = y #/ step
-                grid[gy][gx] = (grid[gy][gx] / self.grid_color_normalizer) + 0
+                grid[gy][gx] = (grid[gy][gx] / maxvalue) + 0
+
+                # Gridline drawing code: Uncomment to see gridlines drawn
                 '''
     			if x % 100 == 0:
     				grid[x][y] = (1 - float (abs((x - self.worldsize / 2))) / float(self.worldsize / 2))**2
@@ -153,7 +191,11 @@ class Agent(object):
     			if x == self.worldsize / 2 and y == self.worldsize / 2:
     				grid[x][y] = 0
                 '''
-        grid[int(self.zt[1]) - self.worldsize/2][int(self.zt[0]) - self.worldsize/2] = 1
+
+        # Put a white dot at the observation site
+        if self.zt[1] >= 0 and self.zt[1] < self.worldsize:
+            if self.zt[0] >= 0 and self.zt[0] < self.worldsize:
+                grid[int(self.zt[1]) - self.worldsize/2][int(self.zt[0]) - self.worldsize/2] = 1
     	#grid[int(self.mu_t[1]) + self.worldsize / 2][int(self.mu_t[0]) + self.worldsize / 2] = 0
         
 
