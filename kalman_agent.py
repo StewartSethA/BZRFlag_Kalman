@@ -28,17 +28,7 @@ class Agent(object):
         mytanks = self.bzrc.get_mytanks()
         for tank in mytanks:
             self.mytankdata.append((0.0, 0.0)) # push initial speed_error and angle_error onto list for each tank
-        
-    def tick(self, time_diff):
-        """Some time has passed; decide what to do next."""
-        mytanks, othertanks, flags, shots = self.bzrc.get_lots_o_stuff()
-        self.mytanks = mytanks
-        self.othertanks = othertanks
-        self.flags = flags
-        self.shots = shots
-        self.enemies = [tank for tank in othertanks if tank.color !=
-                        self.constants['team']]
-        self.commands = []
+
         self.mu_t = numpy.zeros(6)
         self.sigma_t = 100.0 * numpy.identity(6, float)
         self.sigma_t[1][1] = 0.1
@@ -52,12 +42,28 @@ class Agent(object):
         self.observation_matrix = numpy.zeros((2, 6), float)
         self.observation_matrix[0][0] = 1
         self.observation_matrix[1][3] = 1
-        self.observation_noise = 5 * numpy.identity(2, float)
-        self.sigma_x = 70
-        self.sigma_y = 100
-        self.rho = 0.3
+        self.observation_noise = 25 * numpy.identity(2, float)
         self.worldsize = int(self.constants['worldsize'])
         self.grid_color_normalizer = 1
+        
+    def tick(self, time_diff):
+        """Some time has passed; decide what to do next."""
+        mytanks, othertanks, flags, shots = self.bzrc.get_lots_o_stuff()
+        self.mytanks = mytanks
+        self.othertanks = othertanks
+        self.flags = flags
+        self.shots = shots
+        self.enemies = [tank for tank in othertanks if tank.color !=
+                        self.constants['team']]
+        self.commands = []
+        
+        self.physics[0][1] = time_diff
+        self.physics[0][2] = time_diff**2 / 2
+        self.physics[1][2] = time_diff
+        self.physics[3][4] = time_diff
+        self.physics[3][5] = time_diff**2 / 2
+        self.physics[4][5] = time_diff
+
         self.update_estimates()
         self.update_estimate_plot()
 
@@ -85,30 +91,41 @@ class Agent(object):
     	self.mu_t = F.dot(ut) + kalman_gain.dot(self.zt -H.dot(F.dot(ut)))
     	self.sigma_t = (numpy.identity(6, float) - kalman_gain.dot(H)).dot(F.dot(Et.dot(FT)) + Ex)
 
+        print "mu_t:\n"
     	for item in self.mu_t:
     		print item
-    	for item in self.sigma_t:
-    		print item
+        print "observation:\n"
+        print self.zt[0], self.zt[1]
+    	#for item in self.sigma_t:
+    		#print item
 
     def update_estimate_plot(self):
     	maxvalue = 0
-    	self.sigma_x = math.sqrt(self.sigma_t[0][0])
-    	self.sigma_y = math.sqrt(self.sigma_t[3][3])
-    	self.rho = self.sigma_t[0][1] / (self.sigma_x * self.sigma_y)
+    	self.sigma_x = self.sigma_t[0][0]
+    	self.sigma_y = self.sigma_t[3][3]
+    	self.rho = self.sigma_t[0][1] / (math.sqrt(self.sigma_x) * math.sqrt(self.sigma_y))
         for x in range(0, self.worldsize - 1):
             for y in range(0, self.worldsize - 1):
                 grid[x][y] = 0
         print self.sigma_x, self.sigma_y, self.rho
         step = 1
-        extent = 20
+        extent = 5
         #for x in range(0, self.worldsize - 1, step):
     	#for y in range(0, self.worldsize - 1, step):
         for x in range(int(self.mu_t[0] - extent * self.sigma_t[0][0] + self.worldsize/2), int(self.mu_t[0] + extent * self.sigma_t[0][0] + self.worldsize/2), step):
+            if x < 0 or x >= self.worldsize:
+                continue
             for y in range(int(self.mu_t[3] - extent * self.sigma_t[3][3] + self.worldsize/2), int(self.mu_t[3] + extent * self.sigma_t[3][3] + self.worldsize/2), step):
+                if y < 0 or y >= self.worldsize:
+                    continue
                 x_center = x - self.mu_t[0] - self.worldsize/2
                 y_center = y - self.mu_t[3] - self.worldsize/2
                 gx = x #/ step
                 gy = y #/ step
+                #print "SIGMA_X: ", self.sigma_x, " SIGMA_Y: ", self.sigma_y
+                small1 = 1.0/(2.0 * math.pi * self.sigma_x * self.sigma_y * math.sqrt(1 - self.rho **2))
+                small2 = math.exp(-1.0/2.0 * (x_center**2 / self.sigma_x**2 + y_center**2 / self.sigma_y**2 \
+                    -2.0*self.rho*x_center*y_center/(self.sigma_x*self.sigma_y)))
                 grid[gy][gx] = 1.0/(2.0 * math.pi * self.sigma_x * self.sigma_y * math.sqrt(1 - self.rho **2)) \
     				* math.exp(-1.0/2.0 * (x_center**2 / self.sigma_x**2 + y_center**2 / self.sigma_y**2 \
     				-2.0*self.rho*x_center*y_center/(self.sigma_x*self.sigma_y)))
@@ -117,12 +134,15 @@ class Agent(object):
                 if grid[gy][gx] > maxvalue:
     				maxvalue = grid[gy][gx]
     	self.grid_color_normalizer = maxvalue
-        grid[int(self.zt[1]) - self.worldsize/2][int(self.zt[0]) - self.worldsize/2] = 1
         for x in range(int(self.mu_t[0] - extent * self.sigma_t[0][0] + self.worldsize/2), int(self.mu_t[0] + extent * self.sigma_t[0][0] + self.worldsize/2), step):
+            if x < 0 or x >= self.worldsize:
+                continue
             for y in range(int(self.mu_t[3] - extent * self.sigma_t[3][3] + self.worldsize/2), int(self.mu_t[3] + extent * self.sigma_t[3][3] + self.worldsize/2), step):
+                if y < 0 or y >= self.worldsize:
+                    continue
                 gx = x #/ step
                 gy = y #/ step
-                grid[gx][gy] = grid[gx][gy] / self.grid_color_normalizer
+                grid[gy][gx] = (grid[gy][gx] / self.grid_color_normalizer) + 0
                 '''
     			if x % 100 == 0:
     				grid[x][y] = (1 - float (abs((x - self.worldsize / 2))) / float(self.worldsize / 2))**2
@@ -133,6 +153,7 @@ class Agent(object):
     			if x == self.worldsize / 2 and y == self.worldsize / 2:
     				grid[x][y] = 0
                 '''
+        grid[int(self.zt[1]) - self.worldsize/2][int(self.zt[0]) - self.worldsize/2] = 1
     	#grid[int(self.mu_t[1]) + self.worldsize / 2][int(self.mu_t[0]) + self.worldsize / 2] = 0
         
 
