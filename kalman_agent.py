@@ -36,13 +36,17 @@ class Agent(object):
         self.sigma_t[4][4] = 0.1
         self.sigma_t[5][5] = 0.1
         self.physics = numpy.identity(6, float)
-        self.state_noise = 0.1 * numpy.identity(6, float)
+        
+        # TWEAK ME!
+        self.state_noise = 1 * numpy.identity(6, float)
         self.state_noise[2][2] = 100
         self.state_noise[5][5] = 100
+
         self.observation_matrix = numpy.zeros((2, 6), float)
         self.observation_matrix[0][0] = 1
         self.observation_matrix[1][3] = 1
-        self.observation_noise = 25 * numpy.identity(2, float)
+        self.observation_noise_factor = 25
+        self.observation_noise = self.observation_noise_factor * numpy.identity(2, float)
         self.worldsize = int(self.constants['worldsize'])
         self.grid_color_normalizer = 1
         self.last_time_diff = 0
@@ -60,13 +64,18 @@ class Agent(object):
         
         dt = time_diff - self.last_time_diff
         self.last_time_diff = time_diff
+        print "TIME: ", dt * 1
 
-        self.physics[0][1] = dt
-        self.physics[0][2] = dt**2 / 2
-        self.physics[1][2] = dt
-        self.physics[3][4] = dt
-        self.physics[3][5] = dt**2 / 2
-        self.physics[4][5] = dt
+        # Adjust this model for different agents. And weather.
+        friction_k = .1
+        self.physics[0][1] = dt * 1
+        self.physics[0][2] = dt**2 / 2     # Accel x
+        self.physics[1][2] = dt            # Change in vel x
+        self.physics[2][1] = -friction_k
+        self.physics[3][4] = dt * 1
+        self.physics[3][5] = dt**2 / 2     # Accel y
+        self.physics[4][5] = dt            # Change in vel y
+        self.physics[5][4] = -friction_k
 
         self.update_estimates()
         self.update_estimate_plot()
@@ -74,7 +83,7 @@ class Agent(object):
         # Move
         mytanks = self.bzrc.get_mytanks()
         tank = mytanks[0]
-        if tank.status != 'alive':
+        if tank.status == 'alive':
         	self.do_move(tank)
         	results = self.bzrc.do_commands(self.commands)
 
@@ -89,17 +98,24 @@ class Agent(object):
     	FT = F.transpose()
     	HT = H.transpose()
 
+        Fn = F.dot(Et.dot(FT)) + Ex
+
         #Prediction
         self.ut_pred = F.dot(ut)
-
         # Kalman update equations
-    	second_term_inverse = numpy.linalg.inv(H.dot(F.dot(Et.dot(FT)) + Ex).dot(HT) + Ez)
-    	kalman_gain = (F.dot(Et).dot(FT) + Ex).dot(HT).dot(second_term_inverse)
+        second_term_inverse = numpy.linalg.inv(H.dot(Fn.dot(HT)) + Ez)
+        kalman_gain = Fn.dot(HT.dot(second_term_inverse))
         self.zt = (self.enemies[0].x, self.enemies[0].y)
-    	self.mu_t = F.dot(ut) + kalman_gain.dot(self.zt -H.dot(F.dot(ut)))
-    	self.sigma_t = (numpy.identity(6, float) - kalman_gain.dot(H)).dot(F.dot(Et.dot(FT)) + Ex)
-
+        self.mu_t = F.dot(ut) + kalman_gain.dot(self.zt -H.dot(F.dot(ut)))
+        self.sigma_t = (numpy.identity(6, float) - kalman_gain.dot(H)).dot(Fn)
+        for item in self.mu_t:
+            print item
+        print "..."
+        #print self.ut_pred[0], ",", self.ut_pred[1], ",", self.ut_pred[2], ",", self.ut_pred[3], ",", self.ut_pred[4], ",", self.ut_pred[5], ",", self.zt[0], ",",self.zt[1]
+        #print self.sigma_t[0][0], ",", self.sigma_t[3][3]
+        #print self.mu_t[0], ", ", self.mu_t[3]
         # Debug statements
+        '''
         print "mu_t:\n"
     	for item in self.mu_t:
     		print item
@@ -108,13 +124,14 @@ class Agent(object):
         print "sigma:\n"
     	for item in self.sigma_t:
     		print item
+        '''
 
     def update_estimate_plot(self):
         # sigma x, y, and rho are used to plot the PDF
     	self.sigma_x = self.sigma_t[0][0]
     	self.sigma_y = self.sigma_t[3][3]
     	self.rho = self.sigma_t[0][3] / (math.sqrt(self.sigma_x) * math.sqrt(self.sigma_y))
-        print self.sigma_x, self.sigma_y, self.rho
+        #print self.sigma_x, ",", self.sigma_y, ",", self.rho
 
         # Create a mini 2D sigma matrix and a 1D mu vector for plotting the distribution
         pos_mu = (self.ut_pred[0] + self.worldsize/2, self.ut_pred[3] + self.worldsize/2)
@@ -196,24 +213,52 @@ class Agent(object):
                 '''
 
         # Put a white dot at the observation site
-        if self.zt[1] >= 0 and self.zt[1] < self.worldsize:
-            if self.zt[0] >= 0 and self.zt[0] < self.worldsize:
-                grid[int(self.zt[1]) - self.worldsize/2][int(self.zt[0]) - self.worldsize/2] = 1
+        if self.zt[1] > -self.worldsize/2+2 and self.zt[1] < self.worldsize/2-2:
+            if self.zt[0] > -self.worldsize/2+2 and self.zt[0] < self.worldsize/2-2:
+                grid[int(self.zt[1]-1) + self.worldsize/2][int(self.zt[0]) + self.worldsize/2] = 1
+                grid[int(self.zt[1]) + self.worldsize/2][int(self.zt[0]-1) + self.worldsize/2] = 1
+                grid[int(self.zt[1]+1) + self.worldsize/2][int(self.zt[0]) + self.worldsize/2] = 1
+                grid[int(self.zt[1]) + self.worldsize/2][int(self.zt[0]+1) + self.worldsize/2] = 1
+
+        # Put a little white dot at the prediction site
+        if self.ut_pred[3] > -self.worldsize/2+1 and self.ut_pred[3] < self.worldsize/2-1:
+            if self.ut_pred[0] > -self.worldsize/2+1 and self.ut_pred[0] < self.worldsize/2-1:
+                grid[int(self.ut_pred[3]) + self.worldsize/2][int(self.ut_pred[0]) + self.worldsize/2] = 0
+        #grid[gy][gx] = (grid[gy][gx] / maxvalue) + 0
     	#grid[int(self.mu_t[1]) + self.worldsize / 2][int(self.mu_t[0]) + self.worldsize / 2] = 0
         
 
     def do_move(self, tank):
         """Compute and follow the potential field vector"""
-        print(self.get_potential_field_vector(tank))
-        v, theta = self.get_potential_field_vector(tank)
-        self.commands.append(self.pd_controller_move(tank, v, theta))
+        #print(self.get_potential_field_vector(tank))
+        #v, theta = self.get_potential_field_vector(tank)
+        # Predict the enemy tank's move
+        F = self.physics
+        dt = math.sqrt((tank.x - self.mu_t[0])**2 + (tank.y - self.mu_t[3])**2) / 80.0
+        # Adjust this model for different agents. And weather.
+        friction_k = .1
+        F[0][1] = dt * 1
+        F[0][2] = dt**2 / 2     # Accel x
+        F[1][2] = dt            # Change in vel x
+        F[2][1] = -friction_k
+        F[3][4] = dt * 1
+        F[3][5] = dt**2 / 2     # Accel y
+        F[4][5] = dt            # Change in vel y
+        F[5][4] = -friction_k
+        shoot_pred = F.dot(self.mu_t)
+
+        target_x = shoot_pred[0]
+        target_y = shoot_pred[3]
+        self.move_to_position(tank, target_x, target_y)
+        #self.commands.append(self.pd_controller_move(tank, v, theta))
 
     def move_to_position(self, tank, target_x, target_y):
         """Set command to move to given coordinates."""
         target_angle = math.atan2(target_y - tank.y,
                                   target_x - tank.x)
         relative_angle = self.normalize_angle(target_angle - tank.angle)
-        command = Command(tank.index, 1, 2 * relative_angle, True)
+        print "Moving turret to ", relative_angle
+        command = Command(tank.index, 0, 2 * relative_angle, True)
         self.commands.append(command)
 
     def normalize_angle(self, angle):
