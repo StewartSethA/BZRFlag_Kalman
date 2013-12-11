@@ -1,4 +1,4 @@
-# this agent spawns one tank at a random location in the world and just sits there.
+# This agent moves toward an enemy tank.
 # Good for target practice and testing the Kalman physics engine.
 
 #!/usr/bin/python -tt
@@ -26,6 +26,7 @@
 import sys
 import math
 import time
+import random
 
 from bzrc import BZRC, Command
 
@@ -37,6 +38,8 @@ class Agent(object):
         self.constants = self.bzrc.get_constants()
         self.commands = []
         self.movedir = 1
+        self.clock = 0
+        self.last_time_diff = 0
 
     def tick(self, time_diff):
         """Some time has passed; decide what to do next."""
@@ -47,14 +50,37 @@ class Agent(object):
         self.shots = shots
         self.enemies = [tank for tank in othertanks if tank.color !=
                         self.constants['team']]
-
         tank = self.mytanks[0]
+        if tank.status != 'alive':
+            return
         self.originX = tank.x
         self.originY = tank.y
-
-        command = Command(tank.index, 0, 0, False)
-        self.commands.append(command)
+        if self.clock > 1:
+            self.clock = 0
+            self.move_to_position(tank, self.enemies[2].x, self.enemies[2].y)
+            print "Moving to give hugs to enemy tanks... ", self.enemies[2].x, ",", self.enemies[2].y, " : ",         self.enemies[2].color
         results = self.bzrc.do_commands(self.commands)
+        self.clock += time_diff - self.last_time_diff
+        self.last_time_diff = time_diff
+
+    def move_to_position(self, tank, target_x, target_y):
+        """Set command to move to given coordinates."""
+        target_angle = math.atan2(target_y - tank.y,
+                                  target_x - tank.x)
+        relative_angle = self.normalize_angle(target_angle - tank.angle) * 0.9
+        speed = min(25, 0.2 * max(abs(target_y-tank.y), abs(target_x-tank.x)))
+        command = Command(tank.index, speed * random.randint(1,2), 2 * relative_angle, False)
+        self.commands.append(command)
+
+    def normalize_angle(self, angle):
+        """Make any angle be between +/- pi."""
+        angle -= 2 * math.pi * int (angle / (2 * math.pi))
+        if angle <= -math.pi:
+            angle += 2 * math.pi
+        elif angle > math.pi:
+            angle -= 2 * math.pi
+        return angle
+
 
 def main():
     # Process CLI arguments.

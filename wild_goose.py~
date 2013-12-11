@@ -36,8 +36,7 @@ class Agent(object):
                         self.constants['team']]
         
         tank = self.mytanks[0]
-        if tank.status != 'alive':
-            return
+        
         #print self.clock , self.last_time_diff
         self.clock = self.clock + (time_diff - self.last_time_diff)
         if self.clock > self.whenMove:

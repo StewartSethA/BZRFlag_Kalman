@@ -59,8 +59,8 @@ class Agent(object):
         self.worldsize = int(self.constants['worldsize'])
         self.grid_color_normalizer = 1
         self.last_time_diff = 0
-        self.print_mu = False
-        self.print_sigma = True
+        self.print_mu = True
+        self.print_sigma = False
         if self.print_sigma:
             print "Sigma X Pos,Sigma Y Pos,Sigma X Vel,Sigma Y Vel,Sigma X Acc,Sigma Y Acc"
         if self.print_mu:
